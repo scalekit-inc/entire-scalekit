@@ -31,6 +31,15 @@ flowchart LR
 
 Scalekit provides the reach: 600+ connectors and 35,000+ tools, with every call made as the user. Entire provides the memory.
 
+An agent may also reach the same apps through an MCP server, including Scalekit's own. Those calls work, but this plugin does not save them in Brain, so the next session asks the app again. The plugin adds the saving:
+
+- the response is stored as a Brain memory, with secrets removed and the user identifier hashed,
+- a route memory records which connection and tool to use next time,
+- a read has a stable key, so a refresh is one command,
+- a write is never answered from memory and never repeated.
+
+The agent guide tells agents to use `entire scalekit` for the apps it covers, so the result is saved.
+
 ## Requirements
 
 - Node.js 20 or later
@@ -210,6 +219,7 @@ Paste the output of `entire scalekit agent-guide` into the file your agent reads
 ## Context from other apps (entire-scalekit)
 
 Context from apps such as Linear, Slack and GitHub is saved in Entire Brain.
+Use entire scalekit for any app it covers, even if another tool can reach the same app, so the result is saved in Brain. If you would rather use the other tool, ask the person first.
 
 1. For a read, recall first: entire brain recall "<question>" --json
    A write is never answered from memory.
