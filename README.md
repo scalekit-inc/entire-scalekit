@@ -28,7 +28,7 @@ flowchart LR
 4. The plugin saves it with `entire brain remember`, under the path `project.<connector>.<tool>`.
 5. Later sessions run `entire brain recall` and get the saved text. They make no call to the app.
 
-Scalekit provides the reach: 500+ connectors and 20,000+ tools, with every call made as the user. Entire provides the memory.
+Scalekit provides the reach: 600+ connectors and 20,000+ tools, with every call made as the user. Entire provides the memory.
 
 ## Requirements
 
