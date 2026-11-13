@@ -1,4 +1,4 @@
-# Save context from your own apps into Brain
+# Entire Brain
 
 > entire-scalekit is a CLI plugin for Entire. It calls your apps through Scalekit as you, and saves each response as a Brain memory the next agent can read.
 
