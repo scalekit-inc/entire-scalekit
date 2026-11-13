@@ -19,7 +19,7 @@ You need:
 - A git repository with at least one commit. An empty practice repository is enough after `git commit --allow-empty -m "init"`
 - One app your account can read. The examples use a Linear issue id, `ENG-123`. Use an id your account can read
 
-Scalekit AgentKit is the auth and tool-calling layer: 600+ connectors and 35,000+ tools. Each call uses the connected account of the user you name.
+Scalekit AgentKit is the auth and tool-calling layer: 600+ connectors and 35,000+ tools. Each call uses the connected account stored for the connected-account identifier this CLI plugin saved.
 
 | Name | What you have |
 | --- | --- |
@@ -73,21 +73,22 @@ entire scalekit       # prints the command list and exits 1
 
 Entire passes a CLI plugin the operating system, terminal, locale, CI, proxy, SSH agent, `ENTIRE_*`, `LC_*`, and `XDG_*` variables. Other names are excluded. `ENTIRE_PLUGIN_ENV` adds names or prefixes on top of that set.
 
-Copy `.env.example` to `.env`. Fill in four values from your Scalekit environment. Do not commit `.env`.
+Copy `.env.example` to `.env`. Fill in three values from Dashboard → Developers → Settings → API Credentials. Do not commit `.env`.
 
 | Name | Value |
 | --- | --- |
 | `SCALEKIT_ENV_URL` | Environment URL, such as `https://<your-environment>.scalekit.cloud` |
 | `SCALEKIT_CLIENT_ID` | API client id |
 | `SCALEKIT_CLIENT_SECRET` | API client secret |
-| `SCALEKIT_IDENTIFIER` | The user whose connected accounts the plugin uses. The authorization link is for this same user |
 
 ```sh
 set -a; . ./.env; set +a
 export ENTIRE_PLUGIN_ENV='SCALEKIT_*'
 ```
 
-Run those two lines again in each new terminal. `show` and `agent-guide` work without the four values. Every other command stops and names each missing variable.
+Run those two lines again in each new terminal. `show` and `agent-guide` work without the three values. Every other command stops and names each missing variable.
+
+When you run `entire scalekit`, Entire sets `ENTIRE_PLUGIN_DATA_DIR`. On the first run the CLI plugin writes a connected-account identifier in that directory, in a file named `identifier`. The value starts with `usr_`. You do not choose it. The next run reads the same file. The file mode is `0600`.
 
 ## 3. Keep the first memory on this machine
 
@@ -102,7 +103,7 @@ Brain memories stay on your machine until you connect that repository with `enti
 
 Leave `ENTIRE_BRAIN_NO_EGRESS` unset when this repository should sync Brain to a team. The first `fetch`, `run`, or `refresh` then stops before the tool runs. The message tells you to add `--share`. Add `--share` only after a person agrees the text can reach the team. The CLI plugin remembers that yes for this repository.
 
-When Entire launches the plugin, local copies go in `ENTIRE_PLUGIN_DATA_DIR`. If that variable is unset, copies go in `.entire-scalekit` in the current directory. Git ignores `.entire-scalekit`. The public connector catalog is cached there for 24 hours as `catalog.json`.
+When you run `entire scalekit`, Entire sets `ENTIRE_PLUGIN_DATA_DIR`. Local copies and the connected-account identifier go there. The CLI plugin stops if that variable is missing. The public connector catalog is cached in that directory for 24 hours as `catalog.json`.
 
 ## 4. Authorize one app
 
@@ -128,7 +129,7 @@ LINEAR  Linear  ready  connection=linear
 entire scalekit connect linear
 ```
 
-`connect` creates the connection with Scalekit's default scopes when the environment does not have one, then prints a link. Open the link as the user in `SCALEKIT_IDENTIFIER`. The link expires in 5 minutes. Run `entire scalekit connect` again for a new link.
+`connect` creates the connection with Scalekit's default scopes when the environment does not have one, then prints a link. Open the link. Scalekit stores the connected account under the connected-account identifier in `ENTIRE_PLUGIN_DATA_DIR`. The link expires in 5 minutes. Run `entire scalekit connect` again for a new link.
 
 When the account is already authorized, the command says so and still prints a link, for scopes added since the last grant.
 
@@ -241,7 +242,7 @@ The process exits 1 and prints one message.
 
 | Message | What to do |
 | --- | --- |
-| `Missing environment variables` | Export the four values again in this terminal. The message names each missing variable |
+| `Missing environment variables` | Export the three Scalekit values again in this terminal. The message names each missing variable |
 | `No connection named` | Run `entire scalekit search connectors` with one or more words |
 | `not set up` or `needs authorization` | Run `entire scalekit connect` with the connector identifier, then open the new link |
 | `has no tool named` | Run `entire scalekit search tools` with the connection name and words |

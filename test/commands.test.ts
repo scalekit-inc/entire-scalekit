@@ -297,9 +297,16 @@ describe("agent-guide and usage", () => {
       "entire scalekit refresh",
       "entire scalekit agent-guide",
       "ENTIRE_PLUGIN_ENV='SCALEKIT_*'",
+      "connected-account identifier",
     ]) {
       expect(book).toContain(command);
     }
+    expect(book).not.toContain("SCALEKIT_IDENTIFIER");
+    const readme = readFileSync(new URL("../README.md", import.meta.url), "utf8");
+    expect(readme).toContain("connected-account identifier");
+    expect(readme).not.toContain("SCALEKIT_IDENTIFIER");
+    const example = readFileSync(new URL("../.env.example", import.meta.url), "utf8");
+    expect(example).not.toContain("SCALEKIT_IDENTIFIER");
   });
   it("prints the usage for an unknown command", async () => {
     const t = setup();
