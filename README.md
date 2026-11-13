@@ -4,7 +4,7 @@
 
 `entire-scalekit` is a CLI plugin for [Entire](https://entire.com). It pulls data from the apps your team works in, such as a Linear issue or a Slack thread, through [Scalekit](https://scalekit.com) AgentKit. It saves that data as Brain memories, so the next coding agent reads it from Entire and does not call the app again.
 
-> **Status: proof of concept.** It works end to end on one machine. It is not in the Entire plugin index yet. See [Limits](#limits). New to Entire and Scalekit? Follow the [cookbook](COOKBOOK.md).
+> **Status: proof of concept.** It works end to end on one machine. It is not in the Entire plugin index yet. See [Limits](#limits). New to Entire and Scalekit? Follow [Save context from your own apps into Brain](COOKBOOK.md).
 
 ## The problem
 
