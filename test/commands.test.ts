@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { AGENT_GUIDE, runCli } from "../src/commands.js";
 import type { ContextItem } from "../src/item.js";
+import { sharedAppUnavailable } from "../src/scalekit.js";
 import type { CatalogEntry, ConnectionInfo, Deps, ToolInfo } from "../src/ports.js";
 
 const tool = (name: string, readOnly: boolean, description = name, inputs: string[] = ["issueId"]): ToolInfo => ({ name, description, readOnly, inputs, inputSchema: { type: "object", properties: Object.fromEntries(inputs.map((i) => [i, { type: "string" }])), required: inputs } });
@@ -12,6 +13,12 @@ interface World {
   ready: string[];
   tools: Record<string, ToolInfo[]>;
   shared: boolean;
+  /** Connections that have no OAuth credentials, as Scalekit leaves a newly created one. */
+  uncredentialed: string[];
+  /** Connectors for which Scalekit offers its own shared OAuth app. */
+  sharedOffered: string[];
+  /** Connections whose credential check throws. */
+  credentialFails: string[];
   respond: (connection: string, tool: string, args: Record<string, unknown>) => unknown;
 }
 
@@ -29,12 +36,17 @@ function setup(overrides: Partial<World> = {}) {
       SLACK: [tool("slack_reply_in_thread", false, "Reply in a Slack thread", ["channel", "text"])],
     },
     shared: false,
+    uncredentialed: [],
+    sharedOffered: [],
+    credentialFails: [],
     respond: (_c, t) => ({ tool: t, title: "List in Entire" }),
     ...overrides,
   };
   const executed: { connection: string; tool: string; args: Record<string, unknown> }[] = [];
   const remembered: { text: string; path: string }[] = [];
   const created: ConnectionInfo[] = [];
+  const sharedEnabled: string[] = [];
+  const credentialChecks: string[] = [];
   const items = new Map<string, ContextItem>();
   const flags = new Set<string>();
   const out: string[] = [];
@@ -50,6 +62,18 @@ function setup(overrides: Partial<World> = {}) {
       readyConnections: async () => new Set(world.ready),
       listTools: async (provider) => world.tools[provider] ?? [],
       createConnection: async (provider, name) => { const c = { name, provider }; world.connections.push(c); created.push(c); return c; },
+      credentialState: async (connection) => {
+        credentialChecks.push(connection);
+        if (world.credentialFails.includes(connection)) throw new Error("getConnection failed");
+        return { usable: !world.uncredentialed.includes(connection), redirectUri: `https://example.test/callback/${connection}` };
+      },
+      useSharedCredentials: async (connection) => {
+        const provider = world.connections.find((c) => c.name === connection)?.provider ?? "";
+        if (!world.sharedOffered.includes(provider)) return false;
+        sharedEnabled.push(connection);
+        world.uncredentialed = world.uncredentialed.filter((n) => n !== connection);
+        return true;
+      },
       authorizationLink: async (connection) => `https://example.test/magicLink/${connection}`,
       execute: async (connection, t, args) => { executed.push({ connection, tool: t, args }); return { data: world.respond(connection, t, args), executionId: `ex_${++n}` }; },
     },
@@ -59,7 +83,7 @@ function setup(overrides: Partial<World> = {}) {
   const run = (...argv: string[]) => runCli(argv, deps);
   const contextMemories = () => remembered.filter((m) => m.path.startsWith("project."));
   const routeMemories = () => remembered.filter((m) => m.path.startsWith("workflow."));
-  return { world, run, executed, remembered, created, items, out, err, contextMemories, routeMemories };
+  return { world, run, executed, remembered, created, sharedEnabled, credentialChecks, items, out, err, contextMemories, routeMemories };
 }
 
 describe("fetch", () => {
@@ -71,6 +95,22 @@ describe("fetch", () => {
     expect(t.contextMemories()[0].path).toBe("project.linear.linear_issue_get");
     expect(t.contextMemories()[0].text).toContain("List in Entire");
     expect(t.items.size).toBe(1);
+  });
+  it("tells the person to run connect when the connected account is not active", async () => {
+    const t = setup({ ready: [], respond: () => { throw new Error("[invalid_argument] connected account is not active"); } });
+    expect(await t.run("fetch", "linear", "linear_issue_get", "--args", '{"issueId":"DX-42"}')).toBe(1);
+    const said = t.err.join("\n");
+    expect(said).toContain("entire scalekit connect linear");
+    expect(said).toContain("Nothing was saved");
+    expect(t.remembered).toHaveLength(0);
+  });
+  it("does not blame the account when it is active and the error is about something else", async () => {
+    const t = setup({ respond: () => { throw new Error("tool is not active in this environment"); } });
+    await expect(t.run("fetch", "linear", "linear_issue_get", "--args", '{"issueId":"DX-42"}')).rejects.toThrow("tool is not active");
+  });
+  it("lets other errors through unchanged", async () => {
+    const t = setup({ respond: () => { throw new Error("upstream exploded"); } });
+    await expect(t.run("fetch", "linear", "linear_issue_get", "--args", '{"issueId":"DX-42"}')).rejects.toThrow("upstream exploded");
   });
   it("refuses a write tool without calling the app", async () => {
     const t = setup();
@@ -193,6 +233,58 @@ describe("a repository that shares memories with a team", () => {
   });
 });
 
+describe("show usage", () => {
+  it("says where to find a key when none is given", async () => {
+    const t = setup();
+    expect(await t.run("show")).toBe(1);
+    expect(t.err.join("\n")).toContain("Scalekit context");
+  });
+});
+
+describe("refresh usage", () => {
+  it("shows how to use refresh and where to find a key when none is given", async () => {
+    const t = setup();
+    expect(await t.run("refresh")).toBe(1);
+    const said = t.err.join("\n");
+    expect(said).toContain("entire scalekit refresh <key>");
+    expect(said).toContain("Scalekit context");
+    expect(said).not.toBe("No saved item for that key.");
+  });
+  it("still says no saved item for a key that does not exist", async () => {
+    const t = setup();
+    expect(await t.run("refresh", "nope")).toBe(1);
+    expect(t.err.join("\n")).toBe("No saved item for that key.");
+  });
+});
+
+describe("search tools", () => {
+  const many = Array.from({ length: 14 }, (_, i) => tool(`linear_issue_${i}`, true, `Do issue thing ${i}`));
+  it("shows at most 10 tools and says how many were left out", async () => {
+    const t = setup({ tools: { LINEAR: many } });
+    expect(await t.run("search", "tools", "linear", "issue")).toBe(0);
+    expect(t.out.filter((l) => l.startsWith("linear_issue_"))).toHaveLength(10);
+    expect(t.out.join("\n")).toContain("4 more");
+  });
+  it("shows every match with --all", async () => {
+    const t = setup({ tools: { LINEAR: many } });
+    await t.run("search", "tools", "linear", "issue", "--all");
+    expect(t.out.filter((l) => l.startsWith("linear_issue_"))).toHaveLength(14);
+    expect(t.out.join("\n")).not.toContain("more match");
+  });
+  it("offers --all in the hint and does not invent a word to add", async () => {
+    const t = setup({ tools: { LINEAR: many } });
+    await t.run("search", "tools", "linear");
+    const hint = t.out.find((l) => l.includes("more match")) ?? "";
+    expect(hint).toContain("--all");
+    expect(hint).not.toContain(" get");
+  });
+  it("shows everything when there are 10 or fewer", async () => {
+    const t = setup();
+    await t.run("search", "tools", "linear", "issue");
+    expect(t.out.join("\n")).not.toContain("more");
+  });
+});
+
 describe("search connectors", () => {
   it("marks a connector the user can use right now as ready, with its connection name", async () => {
     const t = setup();
@@ -206,6 +298,25 @@ describe("search connectors", () => {
     await t.run("search", "connectors", "slack");
     expect(t.out[0]).toContain("needs authorization");
     expect(t.out[0]).not.toContain("ready");
+  });
+  it("marks a connection with no OAuth credentials as needing them, not as needing authorization", async () => {
+    const t = setup({ uncredentialed: ["slack"] });
+    await t.run("search", "connectors", "slack");
+    expect(t.out[0]).toContain("needs OAuth credentials");
+    expect(t.out[0]).not.toContain("needs authorization");
+    expect(t.out[0]).toContain("entire scalekit connect slack");
+  });
+  it("does not check credentials on a connection that is already ready", async () => {
+    const t = setup({ uncredentialed: ["linear"] });
+    await t.run("search", "connectors", "linear");
+    expect(t.out[0]).toContain("ready");
+    expect(t.credentialChecks).toHaveLength(0);
+  });
+  it("falls back to needs authorization for a row whose credential check fails, and still lists the rest", async () => {
+    const t = setup({ credentialFails: ["slack"], connections: [{ name: "slack", provider: "SLACK" }, { name: "slack2", provider: "SLACK" }], uncredentialed: ["slack2"] });
+    expect(await t.run("search", "connectors", "slack")).toBe(0);
+    expect(t.out.some((l) => l.includes("connection=slack ") && l.includes("needs authorization"))).toBe(true);
+    expect(t.out.some((l) => l.includes("connection=slack2") && l.includes("needs OAuth credentials"))).toBe(true);
   });
   it("marks a catalog connector with no connection as not set up", async () => {
     const t = setup();
@@ -273,6 +384,62 @@ describe("connect", () => {
     expect(await t.run("connect", "nope")).toBe(1);
     expect(t.created).toHaveLength(0);
   });
+
+  describe("a connection with no OAuth credentials", () => {
+    it("switches to Scalekit's shared app when the connector offers one, then prints the link", async () => {
+      const t = setup({ uncredentialed: ["notion"], sharedOffered: ["NOTION"] });
+      expect(await t.run("connect", "NOTION")).toBe(0);
+      expect(t.sharedEnabled).toEqual(["notion"]);
+      expect(t.out.join("\n")).toContain("https://example.test/magicLink/notion");
+      expect(t.out.join("\n")).toContain("development");
+      expect(t.out.join("\n")).toContain("your own credentials");
+    });
+    it("prints no link and says how to add credentials when Scalekit has no shared app for the connector", async () => {
+      const t = setup({ uncredentialed: ["notion"] });
+      expect(await t.run("connect", "NOTION")).toBe(1);
+      const said = t.err.join("\n");
+      expect(t.out.join("\n")).not.toContain("magicLink");
+      expect(said).toContain("client ID");
+      expect(said).toContain("https://example.test/callback/notion");
+      expect(said).toContain("AgentKit > Connections");
+      expect(said).toContain("https://app.scalekit.com");
+      expect(said).toContain("no shared OAuth app");
+      expect(said).toContain("when Scalekit offers one");
+      expect(said).toContain("https://docs.scalekit.com/agentkit/connectors/notion/");
+      expect(said).toContain("entire scalekit connect notion");
+    });
+    it("applies to an existing connection too, not only a new one", async () => {
+      const t = setup({ uncredentialed: ["slack"] });
+      expect(await t.run("connect", "slack")).toBe(1);
+      expect(t.created).toHaveLength(0);
+      expect(t.out.join("\n")).not.toContain("magicLink");
+    });
+    it("leaves a connection that already has credentials alone", async () => {
+      const t = setup({ sharedOffered: ["SLACK"] });
+      await t.run("connect", "slack");
+      expect(t.sharedEnabled).toHaveLength(0);
+    });
+    it("does not change an existing connection's credentials, even when Scalekit has a shared app", async () => {
+      const t = setup({ uncredentialed: ["slack"], sharedOffered: ["SLACK"] });
+      expect(await t.run("connect", "slack")).toBe(1);
+      expect(t.sharedEnabled).toHaveLength(0);
+      const said = t.err.join("\n");
+      expect(said).toContain("If Scalekit offers its own credentials");
+      expect(said).not.toContain("has no shared OAuth app");
+    });
+    it("builds the setup page address without separators and points at the catalog as a fallback", async () => {
+      const t = setup({ catalog: [{ identifier: "GOOGLE_TASKS", displayName: "Google Tasks", description: "Tasks" }], uncredentialed: ["google_tasks"] });
+      expect(await t.run("connect", "GOOGLE_TASKS")).toBe(1);
+      const said = t.err.join("\n");
+      expect(said).toContain("https://docs.scalekit.com/agentkit/connectors/googletasks/");
+      expect(said).toContain("https://docs.scalekit.com/agentkit/connectors/");
+    });
+    it("does not claim the connection is ready after creating it", async () => {
+      const t = setup({ uncredentialed: ["notion"] });
+      await t.run("connect", "NOTION");
+      expect(t.out.join("\n")).not.toContain("default scopes");
+    });
+  });
 });
 
 describe("agent-guide and usage", () => {
@@ -280,6 +447,22 @@ describe("agent-guide and usage", () => {
     const t = setup();
     expect(await t.run("agent-guide")).toBe(0);
     expect(t.out.join("\n")).toBe(AGENT_GUIDE);
+  });
+  it("tells the agent what to do when connect finds no OAuth credentials", () => {
+    expect(AGENT_GUIDE).toContain("no OAuth credentials");
+    expect(AGENT_GUIDE).toContain("app.scalekit.com");
+    expect(AGENT_GUIDE).toContain("setup page link");
+    expect(AGENT_GUIDE).toContain("connect again");
+    expect(AGENT_GUIDE).toContain("no authorized account");
+    expect(AGENT_GUIDE).toContain("shared OAuth app");
+    expect(AGENT_GUIDE).toContain("needs OAuth credentials");
+    expect(AGENT_GUIDE).toContain("up to 10");
+  });
+  it("tells the agent how to get fresh content when a recalled memory may be stale", () => {
+    expect(AGENT_GUIDE).toContain("fetched=");
+    expect(AGENT_GUIDE).toContain("entire scalekit refresh <key>");
+    expect(AGENT_GUIDE).toContain("newest");
+    expect(AGENT_GUIDE).toContain("secret into the chat");
   });
   it("keeps the README copy of the agent guide identical", () => {
     const readme = readFileSync(new URL("../README.md", import.meta.url), "utf8");
@@ -312,5 +495,18 @@ describe("agent-guide and usage", () => {
     const t = setup();
     expect(await t.run("nope")).toBe(1);
     expect(t.err.join("\n")).toContain("entire scalekit fetch");
+  });
+});
+
+describe("sharedAppUnavailable", () => {
+  it("is true for Scalekit's refusal that names unavailable managed credentials", () => {
+    expect(sharedAppUnavailable({ code: "INVALID_CONFIGURATION", message: 'Scalekit-managed credentials are not available for connector "GMAIL"' })).toBe(true);
+  });
+  it("is false for another bad request that shares the code", () => {
+    expect(sharedAppUnavailable({ code: "INVALID_CONFIGURATION", message: "scopes must not be empty" })).toBe(false);
+  });
+  it("is false for another error code", () => {
+    expect(sharedAppUnavailable({ code: "CONNECTION_NOT_FOUND", message: "not available" })).toBe(false);
+    expect(sharedAppUnavailable(new Error("boom"))).toBe(false);
   });
 });

@@ -36,7 +36,8 @@ Scalekit provides the reach: 600+ connectors and 35,000+ tools, with every call 
 - Node.js 20 or later
 - The [Entire CLI](https://entire.com) with the `brain` plugin installed
 - A Scalekit environment with AgentKit, and API credentials for it
-- A connected account in that environment for each app you fetch from
+- A connected account in that environment for each app you fetch from. `connect` creates the connection and prints the link for that account
+- OAuth credentials on each connection. For many connectors Scalekit's shared OAuth app covers this, and `connect` uses it for you. For the rest you register your own OAuth app. See [Connect](#connect)
 
 ## Install
 
@@ -97,6 +98,7 @@ LINEAR  Linear  ready  connection=linear
 | --- | --- |
 | ready | This user has an active connected account. Use the connection name. |
 | needs authorization | The connection exists. A person still has to open the link from `connect`. |
+| needs OAuth credentials | The connection exists but has no OAuth client, so no link would work. Run `connect` for the setup steps. |
 | not set up | The catalog has the connector. This environment has no connection yet. |
 
 ### Find a tool
@@ -111,7 +113,7 @@ linear_issue_get  read  Get a Linear issue by ID
 linear_issue_create  write  Create a Linear issue
 ```
 
-`--schema` prints the tool's inputs. With no words after the connection name, every tool on that connection is listed.
+`--schema` prints the tool's inputs. It lists up to 10 tools. When more match, the last line says how many. Add words to narrow the search, or add `--all` to list every match. With no words after the connection name, the first 10 tools on that connection are listed.
 
 ### Connect
 
@@ -119,7 +121,12 @@ linear_issue_create  write  Create a Linear issue
 entire scalekit connect linear
 ```
 
-Creates the connection when this environment does not have one, using Scalekit's default scopes. Then it prints a link. A person opens that link. It expires in 5 minutes. Run the command again for a new link. If the account is already authorized, the command says so and still prints a link, for scopes added since the last grant.
+Creates the connection when this environment does not have one. A new connection has no OAuth credentials, so `connect` then checks:
+
+- **Scalekit offers a shared OAuth app for the connector.** If `connect` just created the connection, it switches it to the shared app and you register nothing. `connect` never changes the credentials of a connection that already existed. For one of those it prints the steps, and tells you that you can choose Scalekit's own credentials on the connection in the dashboard if the connector offers them. That is enough for development and a quick setup. Add your own credentials later if you want your own app on the consent screen. Which connectors have a shared app changes as Scalekit adds them, so the plugin asks Scalekit each time and keeps no list.
+- **Scalekit has no shared app.** `connect` prints no link, because the provider would reject it with "missing client_id". It prints four steps instead: log in to app.scalekit.com, follow that connector's setup page to register an OAuth app (some connectors have no page, so the message also links the connector index), enter the client ID and secret on the connection, then run `connect` again.
+
+Once the connection has credentials, `connect` prints a link. A person opens that link. It expires in 5 minutes. Run the command again for a new link. If the account is already authorized, the command says so and still prints a link, for scopes added since the last grant.
 
 ### Fetch a read
 
@@ -131,7 +138,7 @@ entire scalekit fetch linear linear_issue_get --args '{"issueId":"DX-42"}'
 Saved 4f077ceb7da8.
 ```
 
-The first argument is the connection name in your Scalekit environment. The second is the tool name. `--args` is the tool's input as a JSON object. `fetch` refuses a write tool and runs nothing.
+The first argument is the connection name in your Scalekit environment. The second is the tool name. `--args` is the tool's input as a JSON object. `fetch` refuses a write tool and runs nothing. If you have not opened the `connect` link yet, `fetch` stops, saves nothing, and tells you to run `connect` first.
 
 ### Run a write
 
@@ -172,7 +179,7 @@ Fetch a read again with the arguments it was saved with:
 entire scalekit refresh 4f077ceb7da8
 ```
 
-Refresh refuses an item that came from a write tool. A refresh of a read replaces the local copy and adds a second Brain memory for the same key.
+The key is in each recalled memory, right after `Scalekit context`. Refresh when a recalled memory may be out of date, and read the memory with the newest `fetched=` time. Refresh refuses an item that came from a write tool. A refresh of a read replaces the local copy and adds a second Brain memory for the same key.
 
 ### Agent guide
 
@@ -180,15 +187,15 @@ Refresh refuses an item that came from a write tool. A refresh of a read replace
 entire scalekit agent-guide
 ```
 
-Prints the lines to paste into `CLAUDE.md` or `AGENTS.md`. Entire gives this plugin no way to write that file itself.
+Prints the lines to paste into the file your agent reads as project instructions: `CLAUDE.md` for Claude Code, `AGENTS.md` for Codex. For another agent, use the file that agent loads. Entire gives this plugin no way to write that file itself.
 
 ### Commands
 
 | Command | What it does |
 | --- | --- |
-| `entire scalekit search connectors <words>` | Search the catalog. Each row is ready, needs authorization, or not set up |
-| `entire scalekit search tools <connection> [words] [--schema]` | List matching tools, labelled read or write |
-| `entire scalekit connect <connector>` | Create the connection when missing, then print the link |
+| `entire scalekit search connectors <words>` | Search the catalog. Each row is ready, needs authorization, needs OAuth credentials, or not set up |
+| `entire scalekit search tools <connection> [words] [--schema] [--all]` | List up to 10 matching tools, labelled read or write |
+| `entire scalekit connect <connector>` | Create the connection when missing, check it has OAuth credentials, then print the link. With none to use, print the setup steps instead |
 | `entire scalekit fetch <connection> <tool> [--args '<json>'] [--share]` | Run a read tool and save the context item |
 | `entire scalekit run <connection> <tool> [--args '<json>'] [--share]` | Run any tool and save the context item |
 | `entire scalekit show <key>` | Print a saved context item from the local copy |
@@ -197,7 +204,7 @@ Prints the lines to paste into `CLAUDE.md` or `AGENTS.md`. Entire gives this plu
 
 ## Tell your agent
 
-Paste the output of `entire scalekit agent-guide` into `CLAUDE.md` or `AGENTS.md`:
+Paste the output of `entire scalekit agent-guide` into the file your agent reads as project instructions (`CLAUDE.md` for Claude Code, `AGENTS.md` for Codex):
 
 ```md
 ## Context from other apps (entire-scalekit)
@@ -207,11 +214,17 @@ Context from apps such as Linear, Slack and GitHub is saved in Entire Brain.
 1. For a read, recall first: entire brain recall "<question>" --json
    A write is never answered from memory.
 2. If a memory says the content is stored locally: entire scalekit show <key>
+   A recalled memory shows when it was fetched (fetched=). If it may be out of date, or the person says it changed, run entire scalekit refresh <key> (or repeat the fetch) and use the memory with the newest fetched= time.
 3. If Brain has no answer, find the app: entire scalekit search connectors <words>
    - ready: use the connection name shown.
-   - needs authorization or not set up: run entire scalekit connect <connector> and give the person the link.
+   - needs authorization, needs OAuth credentials or not set up: run entire scalekit connect <connector>.
+     - connect uses Scalekit's shared OAuth app by itself when Scalekit offers one for the connector, which is enough for development and a quick setup.
+     - If it prints a link, give the person the link. It expires in 5 minutes.
+     - If it says the connection has no OAuth credentials, no link exists yet. Give the person its numbered steps as printed, with the connector's setup page link: they log in to app.scalekit.com, register an OAuth app by following that page, and enter the client ID and secret on the connection. Wait for them to say it is done, then run connect again. Do not ask them to paste the secret into the chat, and do not retry before they answer.
 4. Find the tool: entire scalekit search tools <connection> <words> --schema
+   It lists up to 10 tools. If it says more match, add words to narrow it, or use --all to list every match.
 5. Read tool: entire scalekit fetch <connection> <tool> --args '<json>'
+   - If it says there is no authorized account, run entire scalekit connect <connection>, give the person the link, and repeat the fetch after they open it.
 6. Write tool (it changes the app): entire scalekit run <connection> <tool> --args '<json>'. Run it only when the person asked for that change. Never repeat a write.
 7. If a save stops and asks for --share, the memory will reach the team. Add --share only after the person agrees.
 
@@ -253,6 +266,7 @@ The public connector catalog is cached for 24 hours as `catalog.json` in the plu
 
 This is a proof of concept. These are known gaps:
 
+- `search connectors` cannot say before a connection exists whether Scalekit has a shared OAuth app for it. The only way to find out is to try, which `connect` does. A catalog flag from Scalekit would fix that.
 - You name the connection, the tool and the arguments. There is no shortcut such as "fetch this Linear URL".
 - Every memory is saved with the Brain kind `convention`. Override it with `ENTIRE_SCALEKIT_KIND`. A proper kind per item type is not chosen yet.
 - A fetch or refresh for the same read key adds a new Brain memory. It does not replace the old one. The local copy is replaced.
