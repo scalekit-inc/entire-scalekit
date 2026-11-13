@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildItem, brainPath, itemKey, memoryText, redact } from "../src/item.js";
+import { appError, buildItem, brainPath, itemKey, memoryText, redact, routeText, writeKey } from "../src/item.js";
 
 const base = { connector: "linear", tool: "linear-issues-get", args: { id: "DX-42" }, userId: "user@x.com", data: { title: "List in Entire" }, executionId: "ex_1", now: new Date("2026-11-09T10:00:00Z") };
 
@@ -60,5 +60,57 @@ describe("memoryText", () => {
     expect(overflow).toBe(true);
     expect(text.length).toBeLessThan(1000);
     expect(text).toContain(`entire scalekit show ${item.key}`);
+  });
+});
+
+describe("writeKey", () => {
+  it("differs for two executions of the same write", () => {
+    const a = writeKey("linear", "linear_issue_create", { title: "x" }, "ex_1");
+    const b = writeKey("linear", "linear_issue_create", { title: "x" }, "ex_2");
+    expect(a).toMatch(/^[0-9a-f]{12}$/);
+    expect(a).not.toBe(b);
+  });
+  it("differs from the read key for the same call", () => {
+    expect(writeKey("linear", "t", { a: 1 }, "ex_1")).not.toBe(itemKey("linear", "t", { a: 1 }));
+  });
+});
+
+describe("appError", () => {
+  it("finds a Slack-style error inside a successful response", () => {
+    expect(appError({ ok: false, error: "missing_scope" })).toBe("missing_scope");
+  });
+  it("finds a GraphQL-style errors list", () => {
+    expect(appError({ errors: [{ message: "Entity not found" }] })).toBe("Entity not found");
+  });
+  it("returns nothing for ordinary data", () => {
+    expect(appError({ ok: true, messages: [] })).toBeUndefined();
+    expect(appError({ data: { issue: { title: "x" } } })).toBeUndefined();
+    expect(appError("plain text")).toBeUndefined();
+  });
+});
+
+describe("write items", () => {
+  it("are marked so they are never repeated", () => {
+    const item = buildItem({ ...base, tool: "linear_issue_create", write: true });
+    expect(item.write).toBe(true);
+    expect(item.key).toBe(writeKey("linear", "linear_issue_create", base.args, "ex_1"));
+    expect(memoryText(item).text).toContain("write, do not repeat");
+  });
+});
+
+describe("routeText", () => {
+  it("names the command, connection, tool and inputs, and holds no content", () => {
+    const text = routeText({ connection: "linear", tool: "linear_issue_get", description: "Get a Linear issue", readOnly: true, inputs: ["issueId"] });
+    expect(text).toContain("entire scalekit fetch linear linear_issue_get");
+    expect(text).toContain("Get a Linear issue");
+    expect(text).toContain("issueId");
+  });
+  it("does not double the full stop after a description that ends with one", () => {
+    const text = routeText({ connection: "linear", tool: "linear_teams_list", description: "List all teams.", readOnly: true, inputs: [] });
+    expect(text).toContain("List all teams. Run:");
+  });
+  it("uses run for a write tool", () => {
+    const text = routeText({ connection: "linear", tool: "linear_issue_create", description: "Create an issue", readOnly: false, inputs: ["title"] });
+    expect(text).toContain("entire scalekit run linear linear_issue_create");
   });
 });

@@ -1,58 +1,41 @@
-import { spawnSync } from "node:child_process";
-import { ScalekitClient } from "@scalekit-sdk/node";
-import { brainPath, buildItem, memoryText, type ContextItem } from "./item.js";
-import { loadItem, saveItem } from "./store.js";
+import { brainAdapter } from "./brain.js";
+import { runCli } from "./commands.js";
+import type { ScalekitPort } from "./ports.js";
+import { scalekitAdapter } from "./scalekit.js";
+import { join } from "node:path";
+import { dataRoot, fileStore } from "./store.js";
 
-const REQUIRED = ["SCALEKIT_ENV_URL", "SCALEKIT_CLIENT_ID", "SCALEKIT_CLIENT_SECRET", "SCALEKIT_IDENTIFIER"];
-const usage = `entire scalekit fetch <connector> <tool> [--args '<json>']
-entire scalekit show <key>
-entire scalekit refresh <key>`;
+const REQUIRED = ["SCALEKIT_ENV_URL", "SCALEKIT_CLIENT_ID", "SCALEKIT_CLIENT_SECRET", "SCALEKIT_IDENTIFIER"] as const;
 
-function fail(msg: string): never {
-  console.error(msg);
-  process.exit(1);
+class MissingCredentials extends Error {}
+
+/** The Scalekit client is built on first use, so `show` and `agent-guide` work without credentials. */
+function lazyScalekit(): ScalekitPort {
+  let real: ScalekitPort | undefined;
+  const get = () => {
+    if (real) return real;
+    const missing = REQUIRED.filter((n) => !process.env[n]);
+    if (missing.length)
+      throw new MissingCredentials(
+        `Missing environment variables: ${missing.join(", ")}.\nSet them in your shell. Entire passes them to a plugin only when ENTIRE_PLUGIN_ENV names them: export ENTIRE_PLUGIN_ENV='SCALEKIT_*'`,
+      );
+    real = scalekitAdapter(process.env.SCALEKIT_ENV_URL!, process.env.SCALEKIT_CLIENT_ID!, process.env.SCALEKIT_CLIENT_SECRET!, process.env.SCALEKIT_IDENTIFIER!, join(dataRoot(), "catalog.json"));
+    return real;
+  };
+  return new Proxy({} as ScalekitPort, { get: (_t, method: keyof ScalekitPort) => (...args: unknown[]) => (get()[method] as (...a: unknown[]) => unknown)(...args) });
 }
 
-function client() {
-  const missing = REQUIRED.filter((n) => !process.env[n]);
-  if (missing.length)
-    fail(`Missing environment variables: ${missing.join(", ")}.\nEntire only passes variables listed in ENTIRE_PLUGIN_ENV. Add them there.`);
-  return new ScalekitClient(process.env.SCALEKIT_ENV_URL!, process.env.SCALEKIT_CLIENT_ID!, process.env.SCALEKIT_CLIENT_SECRET!);
+try {
+  process.exitCode = await runCli(process.argv.slice(2), {
+    scalekit: lazyScalekit(),
+    brain: brainAdapter(),
+    store: fileStore(),
+    userId: process.env.SCALEKIT_IDENTIFIER ?? "",
+    out: (line) => console.log(line),
+    err: (line) => console.error(line),
+  });
+} catch (e) {
+  // Scalekit and Brain failures arrive here. Print the message, not a stack trace.
+  console.error(e instanceof MissingCredentials ? e.message : `entire-scalekit: ${e instanceof Error ? e.message : String(e)}`);
+  process.exitCode = 1;
 }
-
-async function fetchItem(connector: string, tool: string, args: Record<string, unknown>): Promise<ContextItem> {
-  const identifier = process.env.SCALEKIT_IDENTIFIER!;
-  const res = await client().actions.executeTool({ toolName: tool, toolInput: args, connector, identifier });
-  const r = res as unknown as { data?: unknown; executionId?: string };
-  return buildItem({ connector, tool, args, userId: identifier, data: r.data ?? {}, executionId: r.executionId ?? "" });
-}
-
-function remember(i: ContextItem) {
-  const { text, overflow } = memoryText(i);
-  const out = spawnSync("entire", ["brain", "remember", text, "--path", brainPath(i.connector, i.tool), "--kind", process.env.ENTIRE_SCALEKIT_KIND ?? "convention"], { stdio: "inherit" });
-  if (out.status !== 0) fail("entire brain remember failed.");
-  console.error(`Saved ${i.key}${overflow ? " (large: local file holds the content)" : ""}.`);
-  console.error("Note: if this repo runs `entire brain connect`, this memory syncs to the hosted repo.");
-}
-
-const [cmd, ...rest] = process.argv.slice(2);
-if (cmd === "fetch") {
-  const [connector, tool] = rest;
-  if (!connector || !tool) fail(usage);
-  const a = rest.indexOf("--args");
-  let args: Record<string, unknown> = {};
-  try { args = a >= 0 ? JSON.parse(rest[a + 1] ?? "") : {}; } catch { fail("--args must be valid JSON."); }
-  const item = await fetchItem(connector, tool, args);
-  saveItem(item);
-  remember(item);
-} else if (cmd === "show") {
-  const item = rest[0] ? loadItem(rest[0]) : undefined;
-  if (!item) fail("No saved item for that key.");
-  console.log(`${item.connector}/${item.tool} fetched ${item.fetchedAt}\n${item.content}`);
-} else if (cmd === "refresh") {
-  const old = rest[0] ? loadItem(rest[0]) : undefined;
-  if (!old) fail("No saved item for that key.");
-  const item = await fetchItem(old.connector, old.tool, old.args);
-  saveItem(item);
-  remember(item);
-} else fail(usage);
