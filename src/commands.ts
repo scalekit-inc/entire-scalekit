@@ -13,6 +13,7 @@ entire scalekit agent-guide`;
 export const AGENT_GUIDE = `## Context from other apps (entire-scalekit)
 
 Context from apps such as Linear, Slack and GitHub is saved in Entire Brain.
+Use entire scalekit for any app it covers, even if another tool can reach the same app, so the result is saved in Brain. If you would rather use the other tool, ask the person first.
 
 1. For a read, recall first: entire brain recall "<question>" --json
    A write is never answered from memory.

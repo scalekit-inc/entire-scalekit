@@ -237,6 +237,96 @@ entire scalekit run linear linear_issue_create --args '{"title":"Cookbook note",
 
 A write is never answered from Brain. Recall can show what a past write saved. Recall is not a reason to skip a new write, and recall is not a reason to repeat a write.
 
+## Example flows with an agent
+
+Steps 1 to 8 set up the plugin. These flows show what a coding agent does with it. Paste the output of `entire scalekit agent-guide` into the agent's instruction file first (step 8). Each flow lists the calls you should see, in order. If the agent skips a call or adds one, the guide is not reaching it.
+
+### Make sure the agent reads the guide
+
+The flows only happen if the guide reaches the agent. Check this first. Look at the agent's first calls, or ask it which instruction files it read. If you never see an `entire scalekit` command, the guide did not reach it. In a real run the guide was written to `CLAUDE.local.md`, the agent never read that file, and it used its other tools for the app. The only `entire scalekit` command in the session was the one that wrote the file.
+
+`CLAUDE.local.md` is a Claude Code convention, so other agents may ignore it. A pattern that works with any agent that follows a repository's `CLAUDE.md` or `AGENTS.md` is to save the guide in a tracked file and point to it, the way a repository points to Entire's own guide:
+
+```sh
+entire scalekit agent-guide > docs/scalekit-guide.md
+echo 'Read docs/scalekit-guide.md for how to fetch context from other apps.' >> CLAUDE.md
+```
+
+If the agent has another tool for the same app, such as a Linear MCP server, it may use that tool instead. This plugin does not save those calls in Brain. For a test, say "use entire scalekit" in the request, or turn the other tool off.
+
+### Flow A: Brain already has the answer
+
+You asked about `ENG-123` in an earlier session, and step 6 saved it. In a new session, ask:
+
+> What does ENG-123 say, and what state is it in?
+
+| # | The agent runs | What you should see |
+| --- | --- | --- |
+| 1 | `entire brain recall "ENG-123" --json` | A memory under `project.linear.linear_issue_get`, with a `fetched=` time |
+| 2 | Nothing else | The agent answers from the memory |
+
+No `entire scalekit` command runs, so there is no call to Linear. If the answer might be out of date, or you say the issue changed, the agent runs `entire scalekit refresh <key>`. The key is in the memory, right after `Scalekit context`. It then uses the memory with the newest `fetched=` time. A refresh adds a second memory and keeps the first.
+
+### Flow B: a question Brain cannot answer yet
+
+Brain has no memory of the project, so the agent has to call the app. In a new session, ask:
+
+> List the issues in the Linear project "Roadmap" with their state. Check Brain first, and save what you find so the next session does not need to ask Linear again.
+
+| # | The agent runs | What you should see |
+| --- | --- | --- |
+| 1 | `entire brain recall "Roadmap issues" --json` | No matching memory |
+| 2 | `entire scalekit search connectors linear` | `ready connection=linear`, or `needs authorization` |
+| 3 | `entire scalekit connect linear`, only if not ready | A link. The agent gives it to you and waits for you to open it |
+| 4 | `entire scalekit search tools linear issues list --schema` | `linear_issues_list  read`, with its inputs |
+| 5 | `entire scalekit fetch linear linear_issues_list --args '{"project":"Roadmap","first":10}'` | `Saved <key>.` This is the Scalekit tool call |
+| 6 | Nothing else | The agent answers from the response |
+
+An agent may also run read-only Brain commands before step 2, such as `entire brain brief`, `entire brain query` or `entire brain memories tree`. That is fine. What matters is that it calls the app only after Brain has no answer.
+
+Now check what was saved:
+
+```sh
+entire brain memories tree --path project.linear
+entire brain memories tree --path workflow.linear
+entire brain recall "Roadmap" --json
+```
+
+`project.linear.linear_issues_list` holds the response. `workflow.linear.linear_issues_list` is the route memory: which connection and tool to use next time, with no content. Start another new session and ask the same question. The agent should now stop at step 1 and make no Linear call.
+
+What gets saved is the tool's response, up to 8,000 characters. A larger response stays in a local file, and the memory points to it with `entire scalekit show <key>`. It is not a short summary. If you want one, ask the agent to save its own snapshot with `entire brain remember`. In a real session the agent did this after reading a 133-issue list. A good snapshot starts with where and when the data came from, then tells the next session when to refresh:
+
+```text
+Linear project Roadmap, fetched <timestamp>. Source: linear_issues_list, project=Roadmap, archived issues left out, no further pages. 133 issues. Use this memory for the issue list and states. Call Linear only for a refresh or a field this snapshot does not have.
+Counts: Triage 73, Done 30, Canceled 7, ...
+Rows: id | status | team | assignee | updatedAt | title
+```
+
+A Brain path segment can use letters, digits and underscores. `project.linear.roadmap_issues` is valid. `project.linear.roadmap-issues` is rejected with "not a valid taxonomy path", so the agent has to retry. The plugin does this for you: it turns every other character into an underscore.
+
+### Flow C: a connector that needs your own OAuth app
+
+Some connectors have no Scalekit shared OAuth app, so you register an OAuth app with the provider. Gmail is one at the time of writing. In a new session, ask:
+
+> Find my latest email from the Acme team and save the subject.
+
+| # | The agent runs | What you should see |
+| --- | --- | --- |
+| 1 | `entire brain recall "Acme email" --json` | No matching memory |
+| 2 | `entire scalekit search connectors gmail` | `needs OAuth credentials connection=gmail`, or `not set up` |
+| 3 | `entire scalekit connect gmail` | No link. Four numbered steps, the connector's setup page and a redirect URI |
+| 4 | Nothing else | The agent gives you the steps as printed and waits |
+
+You do the steps: log in to app.scalekit.com, register the OAuth app by following the setup page, enter the client ID and secret on the connection, and save. Then tell the agent. It runs `entire scalekit connect gmail` again, which now prints a link. You open the link, and the agent continues as in Flow B, from step 4.
+
+The agent must not:
+
+- ask you to paste the client secret into the chat. Sessions are recorded, so a secret typed there is saved in the transcript,
+- run `connect` again before you say the steps are done. Nothing has changed, so it prints the same steps,
+- call `fetch` first. With no authorized account it stops, saves nothing and tells the agent to run `connect`.
+
+When the connector does have a shared app, as Linear, Slack and GitHub do at the time of writing, step 3 is different. `connect` creates the connection, switches it to the shared app, and prints a link in one go. You register nothing.
+
 ## Troubleshoot
 
 The process exits 1 and prints one message.

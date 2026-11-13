@@ -464,9 +464,21 @@ describe("agent-guide and usage", () => {
     expect(AGENT_GUIDE).toContain("newest");
     expect(AGENT_GUIDE).toContain("secret into the chat");
   });
+  it("tells the agent to use the plugin for apps it covers even when another tool reaches the same app", () => {
+    expect(AGENT_GUIDE).toContain("even if another tool");
+    expect(AGENT_GUIDE).toContain("saved in Brain");
+    expect(AGENT_GUIDE).toContain("ask the person");
+  });
   it("keeps the README copy of the agent guide identical", () => {
     const readme = readFileSync(new URL("../README.md", import.meta.url), "utf8");
     expect(readme).toContain(AGENT_GUIDE);
+  });
+  it("keeps the cookbook's example flows tied to real tools and statuses", () => {
+    const book = readFileSync(new URL("../COOKBOOK.md", import.meta.url), "utf8");
+    const flows = book.slice(book.indexOf("## Example flows with an agent"), book.indexOf("## Troubleshoot"));
+    for (const part of ["### Flow A", "### Flow B", "### Flow C", "linear_issues_list", "needs OAuth credentials", "fetched=", "entire scalekit refresh <key>", "paste the client secret into the chat", "### Make sure the agent reads the guide", "not a valid taxonomy path"]) {
+      expect(flows).toContain(part);
+    }
   });
   it("points the cookbook at the real commands", () => {
     const book = readFileSync(new URL("../COOKBOOK.md", import.meta.url), "utf8");
