@@ -25,6 +25,15 @@ function toToolInfo(definition: Json | undefined): ToolInfo | undefined {
   };
 }
 
+/**
+ * Scalekit refuses with INVALID_CONFIGURATION and "Scalekit-managed credentials are not available for connector ..." when it has no
+ * shared app. The SDK also uses INVALID_CONFIGURATION for any other bad request, so the message must match too.
+ */
+export function sharedAppUnavailable(e: unknown): boolean {
+  const err = e as { code?: string; message?: string };
+  return err?.code === "INVALID_CONFIGURATION" && /not available/i.test(err.message ?? "");
+}
+
 /** The Scalekit SDK, for one environment and one user. */
 export function scalekitAdapter(envUrl: string, clientId: string, clientSecret: string, identifier: string, catalogCacheFile?: string): ScalekitPort {
   const actions = new ScalekitClient(envUrl, clientId, clientSecret).actions;
@@ -109,6 +118,24 @@ export function scalekitAdapter(envUrl: string, clientId: string, clientSecret: 
     async createConnection(provider, name) {
       const c = await actions.createConnection({ provider, connectionName: name });
       return { name: c.connectionName ?? name, provider: c.provider };
+    },
+
+    async credentialState(connection) {
+      const c = await actions.getConnection(connection);
+      const oauth = c.settings.case === "oauthConfig" ? c.settings.value : undefined;
+      // Connection types without OAuth settings (API key, basic) have no client to be missing.
+      if (!oauth) return { usable: true, redirectUri: "" };
+      return { usable: Boolean(oauth.clientId || oauth.useScalekitCreds), redirectUri: oauth.redirectUri };
+    },
+
+    async useSharedCredentials(connection) {
+      try {
+        await actions.updateConnection({ connectionName: connection, oauth: { useScalekitCreds: true } });
+        return true;
+      } catch (e) {
+        if (sharedAppUnavailable(e)) return false;
+        throw e;
+      }
     },
 
     async authorizationLink(connection) {

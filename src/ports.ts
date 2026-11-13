@@ -30,6 +30,10 @@ export interface ScalekitPort {
   readyConnections(): Promise<Set<string>>;
   listTools(provider: string): Promise<ToolInfo[]>;
   createConnection(provider: string, name: string): Promise<ConnectionInfo>;
+  /** Whether anyone could authorize this connection: it has its own OAuth client or uses Scalekit's shared one. */
+  credentialState(connection: string): Promise<{ usable: boolean; redirectUri: string }>;
+  /** Switch the connection to Scalekit's shared OAuth app. False when Scalekit has none for this connector. */
+  useSharedCredentials(connection: string): Promise<boolean>;
   authorizationLink(connection: string): Promise<string>;
   execute(connection: string, tool: string, args: Record<string, unknown>): Promise<{ data: unknown; executionId: string }>;
 }

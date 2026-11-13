@@ -123,13 +123,14 @@ LINEAR  Linear  ready  connection=linear
 | --- | --- |
 | ready | Use the connection name in the commands below |
 | needs authorization | Run `connect`, then open the link |
+| needs OAuth credentials | Run `connect`. It prints the setup steps. Do them, then run `connect` again |
 | not set up | Run `connect`. It creates the connection, then prints the link |
 
 ```sh
 entire scalekit connect linear
 ```
 
-`connect` creates the connection with Scalekit's default scopes when the environment does not have one, then prints a link. Open the link. Scalekit stores the connected account under the connected-account identifier in `ENTIRE_PLUGIN_DATA_DIR`. The link expires in 5 minutes. Run `entire scalekit connect` again for a new link.
+`connect` creates the connection when the environment does not have one, then checks that it has OAuth credentials. A new connection has none. If Scalekit offers a shared OAuth app for the connector, `connect` switches to it, and you register nothing. At the time of writing, GitHub, Linear and Slack are examples, and Scalekit adds more over time. Gmail is one that has none, so it needs your own app. The shared app is enough for development and a quick setup. Add your own credentials later if you want your own app on the consent screen. If not, as with Gmail and HubSpot MCP, `connect` prints no link. It tells you to register an OAuth app with the provider, using the redirect URI it prints, and to enter the client ID and secret under AgentKit > Connections in the Scalekit dashboard. Run `connect` again after that. Once the connection has credentials, `connect` prints a link. Open the link. Scalekit stores the connected account under the connected-account identifier in `ENTIRE_PLUGIN_DATA_DIR`. The link expires in 5 minutes. Run `entire scalekit connect` again for a new link.
 
 When the account is already authorized, the command says so and still prints a link, for scopes added since the last grant.
 
@@ -216,7 +217,7 @@ entire scalekit refresh 4f077ceb7da8
 entire scalekit agent-guide
 ```
 
-Paste the output into `CLAUDE.md` or `AGENTS.md` in the repository the agent works in. Entire does not write that file for this CLI plugin. `entire brain setup` regenerates Entire's own agent guide and does not add these lines.
+Paste the output into the file your agent reads as project instructions, in the repository the agent works in: `CLAUDE.md` for Claude Code, `AGENTS.md` for Codex. For another agent, use the file that agent loads. Entire does not write that file for this CLI plugin. `entire brain setup` regenerates Entire's own agent guide and does not add these lines.
 
 The printed guide tells the agent to recall a read before calling the app, to search when Brain has no answer, and to use `run` only for a write a person asked for.
 
