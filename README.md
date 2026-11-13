@@ -60,16 +60,15 @@ entire scalekit        # prints the usage
 
 ## Configure
 
-Copy `.env.example` to `.env` and fill in the four values. Then export them in your shell.
+Copy `.env.example` to `.env` and fill in the three values. Then export them in your shell.
 
 | Variable | What it is |
 | --- | --- |
 | `SCALEKIT_ENV_URL` | Your Scalekit environment URL |
 | `SCALEKIT_CLIENT_ID` | API client ID |
 | `SCALEKIT_CLIENT_SECRET` | API client secret |
-| `SCALEKIT_IDENTIFIER` | The user whose connected accounts the plugin uses |
 
-Entire already passes a plugin a default set of variables. `ENTIRE_PLUGIN_ENV` adds names on top of that set. Add every name that starts with `SCALEKIT_`:
+Entire already passes a CLI plugin a default set of variables. `ENTIRE_PLUGIN_ENV` adds names on top of that set. Add every name that starts with `SCALEKIT_`:
 
 ```sh
 set -a; . ./.env; set +a
@@ -78,7 +77,7 @@ export ENTIRE_PLUGIN_ENV='SCALEKIT_*'
 
 `show` and `agent-guide` work without these variables. Every other command stops and names the missing ones.
 
-The user in `SCALEKIT_IDENTIFIER` needs an active connected account for each connection you use. `entire scalekit connect <connector>` creates the connection when it is missing and prints a link for that person to open. The link lasts 5 minutes.
+On the first run the CLI plugin writes a connected-account identifier in `ENTIRE_PLUGIN_DATA_DIR`. You do not choose it. Later runs reuse that file. `entire scalekit connect <connector>` creates the connection when it is missing and prints a link for that connected account. The link lasts 5 minutes.
 
 ## Use
 
@@ -242,10 +241,10 @@ Brain paths are lowercase. Any character that is not a letter or a digit becomes
 ## Safety
 
 - **Secrets are removed from the saved content and from the Brain text.** That covers bearer tokens, values of keys such as `api_key`, `token` and `client_secret`, and common token prefixes. The local file keeps the arguments, because refresh sends them again.
-- **The user identifier is hashed.** The raw email or ID is never stored.
+- **The connected-account identifier is hashed in each context item.** The context item stores `u_` plus a short hash. The `usr_…` value itself stays in `ENTIRE_PLUGIN_DATA_DIR`. An email is not used.
 - **Credentials come from the environment only.** They are never written to Brain or to disk.
 - **An error inside a successful response is not saved.** Some apps report a failure inside a 2xx body. The plugin prints that error and does not write a context item.
-- **Content stays on this machine unless you share it.** The local copy is in `ENTIRE_PLUGIN_DATA_DIR` when that is set, and otherwise in `.entire-scalekit` in the current directory. That directory is gitignored. `ENTIRE_BRAIN_NO_EGRESS=1` keeps Brain from sending anything out.
+- **Content stays on this machine unless you share it.** The local copy is in `ENTIRE_PLUGIN_DATA_DIR`. Entire sets that variable. The CLI plugin stops if it is missing. `ENTIRE_BRAIN_NO_EGRESS=1` keeps Brain from sending anything out.
 - **Hosted Brain is a stop, then a remembered yes.** If this repository syncs memories to a team, the first `fetch`, `run`, or `refresh` stops before the tool runs. Nothing is saved. Pass `--share` to go ahead. The plugin remembers that answer for this repository. Set `ENTIRE_BRAIN_NO_EGRESS=1` to keep memories on this machine and skip the stop.
 
 The public connector catalog is cached for 24 hours as `catalog.json` in the plugin data directory. The cache holds catalog text only.
