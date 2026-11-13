@@ -2,6 +2,7 @@
   "name": "entire-scalekit",
   "version": "0.0.1",
   "private": true,
+  "license": "MIT",
   "type": "module",
   "description": "Entire CLI plugin: fetch context through Scalekit AgentKit and save it as Brain memories.",
   "bin": { "entire-scalekit": "./bin/entire-scalekit.js" },
