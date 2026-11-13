@@ -285,6 +285,22 @@ describe("agent-guide and usage", () => {
     const readme = readFileSync(new URL("../README.md", import.meta.url), "utf8");
     expect(readme).toContain(AGENT_GUIDE);
   });
+  it("points the cookbook at the real commands", () => {
+    const book = readFileSync(new URL("../COOKBOOK.md", import.meta.url), "utf8");
+    for (const command of [
+      "entire scalekit search connectors",
+      "entire scalekit search tools",
+      "entire scalekit connect",
+      "entire scalekit fetch",
+      "entire scalekit run",
+      "entire scalekit show",
+      "entire scalekit refresh",
+      "entire scalekit agent-guide",
+      "ENTIRE_PLUGIN_ENV='SCALEKIT_*'",
+    ]) {
+      expect(book).toContain(command);
+    }
+  });
   it("prints the usage for an unknown command", async () => {
     const t = setup();
     expect(await t.run("nope")).toBe(1);
