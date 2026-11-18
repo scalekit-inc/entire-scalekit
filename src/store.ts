@@ -17,7 +17,8 @@ export const dataRoot = (env: NodeJS.ProcessEnv = process.env, cwd: string = pro
  * Local copies of context items, and small flags.
  * Items are shared across repositories: a key is a hash of the call.
  * Flags are per repository, because Brain memories are per repository.
- * Nothing here is synced, and nothing here holds a credential.
+ * Nothing here is synced, and no item or flag holds a credential.
+ * (The same data directory also holds config.env with the Scalekit credentials. This store never reads or writes it.)
  */
 export function fileStore(env: NodeJS.ProcessEnv = process.env, cwd: string = process.cwd()): StorePort {
   const root = dataRoot(env, cwd);

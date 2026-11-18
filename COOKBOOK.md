@@ -12,7 +12,7 @@ This is a command-line interface (CLI) plugin: an executable named `entire-scale
 
 You need:
 
-- Node.js 20 or later (`node --version`)
+- Node.js 20.12 or later (`node --version`)
 - The Entire CLI (`entire --version`)
 - The Brain plugin (`entire brain recall --help` lists `--json`)
 - A Scalekit environment with AgentKit, and permission to create an application programming interface (API) client
@@ -73,7 +73,7 @@ entire scalekit       # prints the command list and exits 1
 
 Entire passes a CLI plugin the operating system, terminal, locale, CI, proxy, SSH agent, `ENTIRE_*`, `LC_*`, and `XDG_*` variables. Other names are excluded. `ENTIRE_PLUGIN_ENV` adds names or prefixes on top of that set.
 
-Copy `.env.example` to `.env`. Fill in three values from Dashboard → Developers → Settings → API Credentials. Do not commit `.env`.
+Put three values from Dashboard → Developers → Settings → API Credentials in `config.env`, in the plugin data directory. Entire passes that directory to every run (`ENTIRE_PLUGIN_DATA_DIR`), so the file works in any terminal.
 
 | Name | Value |
 | --- | --- |
@@ -81,12 +81,15 @@ Copy `.env.example` to `.env`. Fill in three values from Dashboard → Developer
 | `SCALEKIT_CLIENT_ID` | API client id |
 | `SCALEKIT_CLIENT_SECRET` | API client secret |
 
+Find the exact path: run `entire scalekit search connectors linear` once. Without credentials it prints where `config.env` goes. On Linux that is usually `~/.local/share/entire/plugins/data/scalekit/config.env`.
+
 ```sh
-set -a; . ./.env; set +a
-export ENTIRE_PLUGIN_ENV='SCALEKIT_*'
+install -m 600 .env "<the path it printed>"
 ```
 
-Run those two lines again in each new terminal. `show` and `agent-guide` work without the three values. Every other command stops and names each missing variable.
+`SCALEKIT_ENVIRONMENT_URL` also works in place of `SCALEKIT_ENV_URL`. `show` and `agent-guide` work without the three values. Every other command stops, names each missing variable and prints the path of `config.env`.
+
+You can export the values instead: `set -a; . ./.env; set +a` and `export ENTIRE_PLUGIN_ENV='SCALEKIT_*'`. Exports win over the file when all three are exported, but last only for that terminal.
 
 When you run `entire scalekit`, Entire sets `ENTIRE_PLUGIN_DATA_DIR`. On the first run the CLI plugin writes a connected-account identifier in that directory, in a file named `identifier`. The value starts with `usr_`. You do not choose it. The next run reads the same file. The file mode is `0600`.
 
@@ -333,7 +336,8 @@ The process exits 1 and prints one message.
 
 | Message | What to do |
 | --- | --- |
-| `Missing environment variables` | Export the three Scalekit values again in this terminal. The message names each missing variable |
+| `has no Scalekit credentials` | Put the values it names in the `config.env` path it prints, then `chmod 600` that file. Works in every terminal |
+| `missing_scope` with `Needed:` and `Granted:` | Run `entire scalekit connect <connection>` and approve. If the scope is still missing, the connection's OAuth app does not request it |
 | `No connection named` | Run `entire scalekit search connectors` with one or more words |
 | `not set up` or `needs authorization` | Run `entire scalekit connect` with the connector identifier, then open the new link |
 | `has no tool named` | Run `entire scalekit search tools` with the connection name and words |

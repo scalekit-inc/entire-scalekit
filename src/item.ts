@@ -46,6 +46,16 @@ export function appError(data: unknown): string | undefined {
   return undefined;
 }
 
+/** Slack reports a missing OAuth scope with the scopes it needed and the ones the account granted. */
+export function missingScope(data: unknown): { needed: string[]; provided: string[] } | undefined {
+  if (!data || typeof data !== "object" || Array.isArray(data)) return undefined;
+  const d = data as Record<string, unknown>;
+  if (d.error !== "missing_scope") return undefined;
+  const list = (v: unknown): string[] =>
+    (typeof v === "string" ? v.split(",") : Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : []).map((s) => s.trim()).filter(Boolean);
+  return { needed: list(d.needed), provided: list(d.provided) };
+}
+
 const seg = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "") || "x";
 
 export function brainPath(connector: string, tool: string): string {
