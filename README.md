@@ -70,7 +70,11 @@ entire scalekit        # prints the usage
 
 ## Configure
 
-Copy `.env.example` to `.env` and fill in the three values. Then export them in your shell.
+Put the three values in `config.env` in the plugin data directory. Entire passes that directory to every run as `ENTIRE_PLUGIN_DATA_DIR`, so the values work in any terminal and need no export. Run any command such as `entire scalekit search connectors linear` once: without credentials it prints the exact path. On Linux it is usually `~/.local/share/entire/plugins/data/scalekit/config.env`.
+
+```sh
+install -m 600 .env "<the path it printed>"
+```
 
 | Variable | What it is |
 | --- | --- |
@@ -78,14 +82,11 @@ Copy `.env.example` to `.env` and fill in the three values. Then export them in 
 | `SCALEKIT_CLIENT_ID` | API client ID |
 | `SCALEKIT_CLIENT_SECRET` | API client secret |
 
-Entire already passes a CLI plugin a default set of variables. `ENTIRE_PLUGIN_ENV` adds names on top of that set. Add every name that starts with `SCALEKIT_`:
+`SCALEKIT_ENVIRONMENT_URL` also works in place of `SCALEKIT_ENV_URL`.
 
-```sh
-set -a; . ./.env; set +a
-export ENTIRE_PLUGIN_ENV='SCALEKIT_*'
-```
+Values exported in the shell win over the file when all three are exported. A partial export is ignored, so a stale value cannot pair with another environment's secret. Entire passes them to a plugin only when `ENTIRE_PLUGIN_ENV` names them, so exports need `export ENTIRE_PLUGIN_ENV='SCALEKIT_*'` in each terminal. The file does not.
 
-`show` and `agent-guide` work without these variables. Every other command stops and names the missing ones.
+`show` and `agent-guide` work without these values. Every other command stops, names the missing ones and prints the path of `config.env`.
 
 On the first run the CLI plugin writes a connected-account identifier in `ENTIRE_PLUGIN_DATA_DIR`. You do not choose it. Later runs reuse that file. `entire scalekit connect <connector>` creates the connection when it is missing and prints a link for that connected account. The link lasts 5 minutes.
 
@@ -220,6 +221,7 @@ Paste the output of `entire scalekit agent-guide` into the file your agent reads
 
 Context from apps such as Linear, Slack and GitHub is saved in Entire Brain.
 Use entire scalekit for any app it covers, even if another tool can reach the same app, so the result is saved in Brain. If you would rather use the other tool, ask the person first.
+If entire scalekit says it has no Scalekit credentials, stop and tell the person what it printed. Do not reach the app another way.
 
 1. For a read, recall first: entire brain recall "<question>" --json
    A write is never answered from memory.

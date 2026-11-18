@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { appError, buildItem, brainPath, itemKey, memoryText, redact, routeText, writeKey } from "../src/item.js";
+import { appError, missingScope, buildItem, brainPath, itemKey, memoryText, redact, routeText, writeKey } from "../src/item.js";
 
 const base = { connector: "linear", tool: "linear-issues-get", args: { id: "DX-42" }, userId: "user@x.com", data: { title: "List in Entire" }, executionId: "ex_1", now: new Date("2026-11-09T10:00:00Z") };
 
@@ -72,6 +72,20 @@ describe("writeKey", () => {
   });
   it("differs from the read key for the same call", () => {
     expect(writeKey("linear", "t", { a: 1 }, "ex_1")).not.toBe(itemKey("linear", "t", { a: 1 }));
+  });
+});
+
+describe("missingScope", () => {
+  it("reads the scopes from a Slack missing_scope response", () => {
+    expect(missingScope({ ok: false, error: "missing_scope", needed: "im:history", provided: "team:read,channels:read" })).toEqual({ needed: ["im:history"], provided: ["team:read", "channels:read"] });
+  });
+  it("reads scope lists sent as arrays", () => {
+    expect(missingScope({ error: "missing_scope", needed: ["im:history"], provided: [] })).toEqual({ needed: ["im:history"], provided: [] });
+  });
+  it("is undefined for any other response", () => {
+    expect(missingScope({ ok: false, error: "channel_not_found" })).toBeUndefined();
+    expect(missingScope({ ok: true })).toBeUndefined();
+    expect(missingScope("text")).toBeUndefined();
   });
 });
 

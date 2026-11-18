@@ -53,3 +53,36 @@ it("asks for the three Scalekit values and not for a connected-account identifie
   expect(result.stderr).toContain("SCALEKIT_CLIENT_SECRET");
   expect(result.stderr).not.toContain("SCALEKIT_IDENTIFIER");
 });
+
+it("names the config file and tells an agent to stop when the values are missing", () => {
+  const cwd = mkdtempSync(join(tmpdir(), "entire-scalekit-cwd-"));
+  const dataDir = mkdtempSync(join(tmpdir(), "entire-scalekit-data-"));
+  const result = run(cwd, dataDir, ["search", "connectors", "linear"]);
+  expect(result.status).toBe(1);
+  expect(result.stderr).toContain(join(dataDir, "config.env"));
+  expect(result.stderr).toContain("Do not reach the app another way");
+  expect(result.stderr).not.toContain("export ENTIRE_PLUGIN_ENV");
+});
+
+it("names only the values config.env lacks, and warns when others can read it", () => {
+  const cwd = mkdtempSync(join(tmpdir(), "entire-scalekit-cwd-"));
+  const dataDir = mkdtempSync(join(tmpdir(), "entire-scalekit-data-"));
+  writeFileSync(join(dataDir, "config.env"), "SCALEKIT_ENV_URL=https://x.scalekit.cloud\nSCALEKIT_CLIENT_ID=id\n", { encoding: "utf8", mode: 0o644 });
+  const result = run(cwd, dataDir, ["search", "connectors", "linear"]);
+  expect(result.status).toBe(1);
+  const first = result.stderr.split("\n").find((l) => l.includes("has no Scalekit credentials")) ?? "";
+  expect(first).toContain("SCALEKIT_CLIENT_SECRET is not set");
+  expect(first).not.toContain("SCALEKIT_CLIENT_ID");
+  expect(result.stderr).toContain("other users can read it");
+});
+
+it("reads the three values from config.env in the data directory, with nothing exported", () => {
+  const cwd = mkdtempSync(join(tmpdir(), "entire-scalekit-cwd-"));
+  const dataDir = mkdtempSync(join(tmpdir(), "entire-scalekit-data-"));
+  // A closed local port: the plugin gets past the credential check and fails on the network instead.
+  writeFileSync(join(dataDir, "config.env"), "SCALEKIT_ENVIRONMENT_URL=http://127.0.0.1:9\nSCALEKIT_CLIENT_ID=id\nSCALEKIT_CLIENT_SECRET=secret\n", "utf8");
+  const result = run(cwd, dataDir, ["search", "connectors", "linear"]);
+  expect(result.status).toBe(1);
+  expect(result.stderr).not.toContain("no Scalekit credentials");
+  expect(result.stderr).toContain("entire-scalekit:");
+}, 30_000);

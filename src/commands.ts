@@ -1,4 +1,4 @@
-import { appError, brainPath, buildItem, memoryText, routePath, routeText, type ContextItem } from "./item.js";
+import { appError, brainPath, buildItem, memoryText, missingScope, routePath, routeText, type ContextItem } from "./item.js";
 import type { ConnectionInfo, Deps, ToolInfo } from "./ports.js";
 
 export const USAGE = `entire scalekit search connectors <words>
@@ -14,6 +14,7 @@ export const AGENT_GUIDE = `## Context from other apps (entire-scalekit)
 
 Context from apps such as Linear, Slack and GitHub is saved in Entire Brain.
 Use entire scalekit for any app it covers, even if another tool can reach the same app, so the result is saved in Brain. If you would rather use the other tool, ask the person first.
+If entire scalekit says it has no Scalekit credentials, stop and tell the person what it printed. Do not reach the app another way.
 
 1. For a read, recall first: entire brain recall "<question>" --json
    A write is never answered from memory.
@@ -84,6 +85,22 @@ function checkSharing(deps: Deps, share: boolean) {
   deps.store.set("share-ok");
 }
 
+/** The next step for an app error, when there is a clear one. Most app errors (not found, bad input) have none. */
+function appErrorHelp(connection: string, problem: string, data: unknown): string[] {
+  const scope = missingScope(data);
+  if (scope)
+    return [
+      `The account on "${connection}" has not granted a permission (OAuth scope) this tool needs.`,
+      `Needed: ${scope.needed.join(", ") || "(the app did not say)"}`,
+      `Granted: ${scope.provided.join(", ") || "(the app did not say)"}`,
+      `Run: entire scalekit connect ${connection}, open the link, and approve. Then repeat this command.`,
+      `If the scope is still missing after that, the connection's OAuth app does not request it. Check the scopes on the connection in app.scalekit.com (AgentKit > Connections > ${connection}).`,
+    ];
+  // Only a bare "deprecated" means the whole tool. A message about one deprecated argument is fixed by changing that argument.
+  if (problem.trim().toLowerCase() === "deprecated") return [`The app no longer supports this tool. Find another with: entire scalekit search tools ${connection} <words>`];
+  return [];
+}
+
 async function execute(deps: Deps, connection: ConnectionInfo, tool: ToolInfo, args: Record<string, unknown>): Promise<ContextItem> {
   let res;
   try {
@@ -95,7 +112,7 @@ async function execute(deps: Deps, connection: ConnectionInfo, tool: ToolInfo, a
     throw e;
   }
   const problem = appError(res.data);
-  if (problem) throw new Stop(`${connection.name}/${tool.name} reported an error: ${problem}\nNothing was saved.`);
+  if (problem) throw new Stop([`${connection.name}/${tool.name} reported an error: ${problem}`, "Nothing was saved.", ...appErrorHelp(connection.name, problem, res.data)].join("\n"));
 
   const item = buildItem({ connector: connection.name, tool: tool.name, args, userId: deps.userId, data: res.data, executionId: res.executionId, write: !tool.readOnly });
   deps.store.save(item);

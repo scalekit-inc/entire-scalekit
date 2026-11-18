@@ -141,6 +141,31 @@ describe("fetch", () => {
     expect(t.items.size).toBe(0);
     expect(t.err.join("\n")).toContain("missing_scope");
   });
+  it("names the scopes Slack needs and has, and says how to re-authorize", async () => {
+    const t = setup({ respond: () => ({ ok: false, error: "missing_scope", needed: "channels:history,im:history", provided: "team:read,channels:read" }) });
+    expect(await t.run("fetch", "linear", "linear_issue_get", "--args", '{"issueId":"DX-42"}')).toBe(1);
+    const err = t.err.join("\n");
+    expect(err).toContain("Needed: channels:history, im:history");
+    expect(err).toContain("Granted: team:read, channels:read");
+    expect(err).toContain("entire scalekit connect linear");
+    expect(err).toContain("OAuth app does not request it");
+    expect(err).not.toContain("search tools");
+  });
+  it("suggests another tool when the app says the tool is deprecated", async () => {
+    const t = setup({ respond: () => ({ errors: [{ message: "deprecated" }] }) });
+    expect(await t.run("fetch", "linear", "linear_issue_get", "--args", '{"issueId":"DX-42"}')).toBe(1);
+    expect(t.err.join("\n")).toContain("entire scalekit search tools linear <words>");
+  });
+  it("does not call the whole tool unsupported when only an argument is deprecated", async () => {
+    const t = setup({ respond: () => ({ errors: [{ message: "Parameter teamId is deprecated, use teamKey" }] }) });
+    expect(await t.run("fetch", "linear", "linear_issue_get", "--args", '{"issueId":"DX-42"}')).toBe(1);
+    expect(t.err.join("\n")).not.toContain("search tools");
+  });
+  it("does not suggest another tool for an ordinary app error", async () => {
+    const t = setup({ respond: () => ({ errors: [{ message: "Entity not found" }] }) });
+    expect(await t.run("fetch", "linear", "linear_issue_get", "--args", '{"issueId":"nope"}')).toBe(1);
+    expect(t.err.join("\n")).not.toContain("search tools");
+  });
 });
 
 describe("run", () => {
@@ -469,6 +494,9 @@ describe("agent-guide and usage", () => {
     expect(AGENT_GUIDE).toContain("saved in Brain");
     expect(AGENT_GUIDE).toContain("ask the person");
   });
+  it("tells the agent to stop when the plugin is not set up", () => {
+    expect(AGENT_GUIDE).toContain("has no Scalekit credentials, stop and tell the person");
+  });
   it("keeps the README copy of the agent guide identical", () => {
     const readme = readFileSync(new URL("../README.md", import.meta.url), "utf8");
     expect(readme).toContain(AGENT_GUIDE);
@@ -491,7 +519,7 @@ describe("agent-guide and usage", () => {
       "entire scalekit show",
       "entire scalekit refresh",
       "entire scalekit agent-guide",
-      "ENTIRE_PLUGIN_ENV='SCALEKIT_*'",
+      "config.env",
       "connected-account identifier",
     ]) {
       expect(book).toContain(command);
