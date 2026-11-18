@@ -6,6 +6,8 @@
 
 > **Status: proof of concept.** It works end to end on one machine. It is not in the Entire plugin index yet. See [Limits](#limits). New to Entire and Scalekit? Follow [Save context from your own apps into Entire Brain](COOKBOOK.md).
 
+**[Watch a demo](https://screen.studio/share/b1TKE0Ma).**
+
 ## The problem
 
 A developer builds a feature from a customer request. The context sits in several apps: the Linear issue, the Slack thread, the GitHub discussion.
